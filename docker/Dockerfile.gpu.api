@@ -1,0 +1,40 @@
+# Dockerfile.gpu.api — GPU deployment for Dia FastAPI (Vapi-ready)
+# Build: docker build -f Dockerfile.gpu.api -t dia-api-gpu .
+# Run:   docker run --rm --gpus all -p 7860:7860 dia-api-gpu
+
+FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    HF_HOME=/app/.cache/huggingface \
+    TRANSFORMERS_CACHE=/app/.cache/huggingface \
+    TORCH_USE_CUDA_DSA=1
+
+# System libs for audio
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-venv libsndfile1 ffmpeg curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# Non-root user & workspace
+RUN useradd -m -u 1001 appuser && mkdir -p /app && chown -R appuser:appuser /app
+USER appuser
+WORKDIR /app
+
+# Copy project
+COPY --chown=appuser:appuser . .
+
+# Venv
+RUN python3 -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
+
+# Install your project (pulls Dia & PyTorch extras as your pyproject specifies)
+RUN pip install --upgrade pip && pip install --no-cache-dir .
+
+# API-specific deps
+RUN pip install --no-cache-dir fastapi uvicorn[standard] soundfile anyio
+
+# Expose API port
+EXPOSE 7860
+
+# Start FastAPI (NOT Gradio)
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
